@@ -252,6 +252,20 @@ function do_env_setup() {
 	fi
 }
 
+function do_ttyUSB0_checks() {
+    [ -e /dev/ttyUSB0 ] && return
+    echo "/dev/ttyUSB0 not created, needed for esphome" >&2
+    [ -f .ttyusb0_notcreated ] && return
+
+    if (whiptail --title "/dev/ttyUSB0" --yesno "/dev/ttyUSB0 not created, and is required to run ESPHome.\nWould you like to create it now?\n\nYou will not be prompted again." 20 78); then
+        echo "Creating static /dev/ttyUSB0 device for ESPHome"
+        sudo mknod -m660 /dev/ttyUSB0 c 188 0
+        sudo chgrp dialout /dev/ttyUSB0
+    else
+        touch .ttyusb0_notcreated
+    fi
+}
+
 function do_docker_checks() {
 	if command_exists docker; then
 		DOCKER_VERSION_GOOD="false"
@@ -370,6 +384,7 @@ else
 	do_env_checks
 	do_python3_checks
 	echo "Please enter sudo pasword if prompted"
+	do_ttyUSB0_checks
 	do_docker_checks
 
 	if [[ "$DOCKER_VERSION_GOOD" == "true" ]] && \

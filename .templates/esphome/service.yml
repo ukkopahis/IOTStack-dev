@@ -1,0 +1,11 @@
+esphome:
+  container_name: esphome
+  image: esphome/esphome:latest
+  restart: unless-stopped
+  user: 0:1000
+  volumes:
+    - ./volumes/esphome:/config
+    - /etc/localtime:/etc/localtime:ro
+  network_mode: host
+  devices:
+    - /dev/ttyUSB0:/dev/ttyUSB0
