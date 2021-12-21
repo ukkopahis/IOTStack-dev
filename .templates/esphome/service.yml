@@ -3,6 +3,9 @@ esphome:
   image: esphome/esphome:latest
   restart: unless-stopped
   user: 0:1000
+  environment:
+    - USERNAME=admin
+    - PASSWORD=%randomPassword%
   volumes:
     - ./volumes/esphome:/config
     - /etc/localtime:/etc/localtime:ro

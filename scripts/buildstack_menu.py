@@ -11,9 +11,11 @@ def main():
   import math
   import sys
   import subprocess
+  import re
   from deps.chars import specialChars, commonTopBorder, commonBottomBorder, commonEmptyLine, padText
   from deps.consts import servicesDirectory, templatesDirectory, volumesDirectory, buildCache, envFile, dockerPathOutput, servicesFileName, composeOverrideFile
   from deps.yaml_merge import mergeYaml
+  from deps.common_functions import generateRandomString
   from blessed import Terminal
   global signal
   global renderMode
@@ -52,6 +54,7 @@ def main():
     global dockerComposeServicesYaml
     try:
       runPrebuildHook()
+      replaceVariables()
       dockerFileYaml = {}
       menuStateFileYaml = {}
       dockerFileYaml["version"] = "3.6"
@@ -472,6 +475,30 @@ def main():
               dockerComposeServicesYaml = execGlobals["dockerComposeServicesYaml"]
             except:
               pass
+
+  def replaceVariables():
+    global dockerComposeServicesYaml
+
+    def replace(stringValue):
+      if "%randomPassword%" in stringValue:
+        pw = generateRandomString()
+        return re.sub(re.escape("%randomPassword%"), pw, stringValue)
+      return stringValue
+
+    def iterate(root):
+      if isinstance(root, list):
+        for key, value in enumerate(root):
+          if isinstance(value, str):
+            root[key] = replace(value)
+          else:
+            iterate(value)
+      if isinstance(root, dict):
+        for key, value in root.items():
+          if isinstance(value, str):
+            root[key] = replace(value)
+          else:
+            iterate(value)
+    iterate(dockerComposeServicesYaml)
 
   def runPostBuildHook():
     for (index, checkedMenuItem) in enumerate(checkedMenuItems):

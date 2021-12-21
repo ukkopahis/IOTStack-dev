@@ -2,6 +2,11 @@
 
 This page explains how to have a service generate a random password during build time. This will require that your service have a working options menu.
 
+Alternatively, a service may just use `%randomPassword%` in a value without any
+options menu. This will generate a new random password the first time this
+service is added. The generated password may be found in the
+`docker-compose.yml`.
+
 Keep in mind that updating strings in a service's yaml config isn't limited to passwords.
 
 ## A word of caution
