@@ -1,3 +1,10 @@
+## Purpose of this fork
+
+This fork provides easy access to all fixes in one place. This is needed while
+the parent project maintainers are inactive.
+
+Only the ***master***-branch is stable and meant for public use.
+
 # IOTstack
 
 IOTstack is a builder for docker-compose to easily make and maintain IoT stacks on the Raspberry Pi.
