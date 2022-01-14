@@ -1,10 +1,11 @@
 site_name: IOTstack - UKKOPAHIS-fork
 site_description: 'Docker stack for getting started on IOT on the Raspberry PI'
 
+
 # Repository
-repo_url: https://github.com/ukkopahis/IOTstack
-repo_name: ukkopahis/IOTstack
-edit_uri: "https://github.com/ukkopahis/IOTstack/edit/master/docs"
+repo_url: https://github.com/SensorsIot/IOTstack
+repo_name: SensorsIot/IOTstack - UKKOPAHIS-dev fork
+edit_uri: "https://github.com/SensorsIot/IOTstack/edit/master/"
 
 theme:
   name: material
