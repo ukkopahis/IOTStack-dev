@@ -17,32 +17,13 @@
 
 ## Overview
 
-Prometheus is a collection of three containers:
+Three containers are installed when you select *Prometheus* in the IOTstack menu:
 
 * *Prometheus*
 * *CAdvisor*
 * *Node Exporter*
 
 The [default configuration](#active-configuration-file) for *Prometheus* supplied with IOTstack scrapes information from all three containers.
-
-## Installing Prometheus
-
-### *if you are running New Menu …*
-
-When you select *Prometheus* in the IOTstack menu, you must also select:
-
-*	*prometheus-cadvisor;* and
-* 	*prometheus-nodeexporter*.
-
-If you do not select all three containers, Prometheus will not start.
-
-### *if you are running Old Menu …*
-
-When you select *Prometheus* in the IOTstack menu, the service definition includes the three containers:
-
-* *Prometheus*
-* *CAdvisor*
-* *Node Exporter*
 
 ## Significant directories and files
 
