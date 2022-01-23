@@ -23,7 +23,10 @@ In this section you can find information on how to contribute a service to IOTst
 Services will grow over time, we may split up the buildstack menu into subsections or create filters to make organising all the services we provide easier to find.
 
 ## Checks
-* `service.yml` file is correct
+* `service.yml` file is correct. To check that it parses correctly and doesn't have port conflicts with other services by running:
+    ```
+    ./scripts/template.py --check
+    ```
 * `build.py` file is correct
 * Service allows for changing external WUI port from Build Stack's options menu if service uses a HTTP/S port
 * Use a default password, or allow the user to generate a random password for the service for initial installation. If the service asks to setup an account this can be ignored.
@@ -34,6 +37,13 @@ Services will grow over time, we may split up the buildstack menu into subsectio
 * Ensure that your service can be backed up and restored without errors or data loss.
 * Any configs that are required before getting the service running should be configured in the service's options menu (and a BuildStack menu Issue should be displayed if not).
 * Fork the repo and push the changes to your fork. Create a cross repo PR for the mods to review. We may request additional changes from you.
+
+## Running python source code tests
+
+```
+  $ pip install -U --user pytest
+  $ python -m pytest
+```
 
 ## Follow up
 If your new service is approved and merged then congratulations! Please watch the Issues page on github over the next few days and weeks to see if any users have questions or issues with your new service.

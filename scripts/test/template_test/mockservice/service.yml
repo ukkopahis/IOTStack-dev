@@ -1,0 +1,22 @@
+mockservice:
+  container_name: mockservice
+  image: mockservice/mockservice:latest
+  ports:
+    - "8089:80"
+    - "127.0.0.1:53:53/tcp"
+    - "127.0.0.1:53:53/udp"
+  environment:
+    - TZ=Etc/UTC
+    - PW=%randomPassword%
+    - INTERFACE=eth0
+  volumes:
+    - ./volumes/pihole/etc-pihole:/etc/pihole
+    - ./volumes/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
+    - "/etc/timezone:/etc/timezone:ro"
+  dns:
+    - 127.0.0.1
+    - 1.1.1.1
+  cap_add:
+    - NET_ADMIN
+  restart: unless-stopped
+

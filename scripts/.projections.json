@@ -1,0 +1,6 @@
+{
+  "*.py": {"alternate": "test/test_{}.py"},
+  "test/test_*.py": {"alternate": "{}.py"},
+  "scripts/*.py": {"alternate": "scripts/test/test_{}.py"},
+  "scripts/test/test_*.py": {"alternate": "scripts/{}.py"},
+}
