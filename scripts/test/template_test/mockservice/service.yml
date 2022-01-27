@@ -13,10 +13,13 @@ mockservice:
     - ./volumes/pihole/etc-pihole:/etc/pihole
     - ./volumes/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
     - "/etc/timezone:/etc/timezone:ro"
+  devices:
+    - "/dev/ttyAMA1:/dev/ttyAMA0:ro"
+    - /dev/null
   dns:
     - 127.0.0.1
     - 1.1.1.1
   cap_add:
     - NET_ADMIN
+  privileged: true
   restart: unless-stopped
-

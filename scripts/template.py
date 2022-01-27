@@ -10,67 +10,101 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Dict, Set, Union
-from collections.abc import Iterable
+from typing import Type, List, Dict, Set, Union
+from collections.abc import Iterator
 from ruamel.yaml import YAML
-from deps.consts import (
-    servicesDirectory, templatesDirectory, volumesDirectory, buildCache,
-    envFile, dockerPathOutput, servicesFileName, composeOverrideFile)
+from deps.consts import servicesDirectory, templatesDirectory, \
+        volumesDirectory, buildCache, envFile, dockerPathOutput, \
+        servicesFileName, composeOverrideFile
 
 logger = logging.getLogger(__name__)
 yaml = YAML()
 
 class NestedDictList:
-    """Operate on nested dict and list structures using dot-separated key
-    strings.
+    """Operate on nested dict and list structures using a dot-separated key
+    string.
 
-    Paths leading to list elements are converted from their list-indices:
-    * If a list element is "KEY=VALUE" (i.e. has the '=' -character), such
-      entries also have the KEY as part of the path.
-    * If a list parent key is 'ports' or 'volumes', elements such a list are
-      parsed as "VALUE:KEY".
+    This class is intended to do the "heavy-lifting" to easily access relevant
+    parts of the parsed yml. This is done by applying conversions to the key
+    strings so that the relevant data is easily modifiable. E.g. in converting
+    a port mapping "1080:80": the container-side "80" becomes part of the key
+    string, while the host side port "1080" becomes the value. This is because
+    modifications only makes sense to the host-side of port-mapping, the
+    container-side port of "80" is a constant for a given container.
+
+    Stated formally, the conversion is done as follows: A PATH (=the
+    dot-separated string of nested key indices) leading to a final leaf value
+    is converted:
+      * If it is parsable as "KEY=VALUE" (i.e. has a '=' -character)
+      * If the containing list's parent's key is 'ports', 'volumes' or
+        'devices', and the leaf value is parsable as "VALUE:KEY". For a leaf
+        value with two ':'-characters, it's split at the first occurance,
+        unless the parent key is 'ports', which is split at the last.
+    Such converted entries have the parsed KEY replacing the list-index in the
+    PATH and have their value replaced with parsed VALUE.
+
+    Adding or removing PATHs is not supported. Only PATHs leading to
+    leaf-values are valid.
     """
+    PathType = Union[str]
+    LeafValueType = Union[str, int, float, bool]
 
-    def __init__(self, backing_dict: dict = None):
+    def __init__(self, backing_dict: dict):
         """Construct instance to query and set values into *backing_dict*."""
         self.root = backing_dict
 
-    def get(self, path: str) -> Union[str, int, float]:
+    def get(self, path: PathType) -> LeafValueType:
         """Get value at converted path *path*."""
         for key, val in self.items():
             if key==path:
                 return val
-        raise KeyError(f'{path} not in {set(self)}')
+        raise KeyError(f'{path} not in {sorted(self)}')
 
     def set(self,
-            path: str,
-            new_value: Union[str,int,float]) -> None:
+            path: PathType,
+            new_value: LeafValueType) -> None:
         """Set value at converted path *path* to *new_value*."""
-        path = path.split('.')
+        keys = path.split('.')
         for itemPath, _, parent, parent_key in NestedDictList.__items_converted(self.root):
             # find item to edit
-            if list(map(str,itemPath)) != path:
-                continue
-            element = parent[parent_key]
-            # convert lists in ports and volumes from indices to maps
-            if isinstance(element, str) and len(path)>2 and path[-2] == 'ports':
-                _, key = element.rsplit(':', maxsplit=1)
-                parent[parent_key] = new_value + ':' + key
-            elif isinstance(element, str) and len(path)>2 and path[-2] == 'volumes':
-                _, key = element.split(':', maxsplit=1)
-                parent[parent_key] = new_value + ':' + key
-            # resolve environment key=value pairs
-            elif isinstance(element, str) and '=' in element and len(path)>0:
-                key, _ = element.split('=', maxsplit=1)
-                parent[parent_key] = key + '=' +new_value
-            else:
-                parent[parent_key] = new_value
+            if list(map(str,itemPath)) == keys:
+                break
+        else:
+            raise ValueError(f'No path={path} found in {sorted(self)}')
+        if isinstance(parent, dict):
+            parent[parent_key] = new_value
             return
-        raise ValueError(f'No key={path} found in {list(self.items())}')
+        assert isinstance(parent_key, int)
+        element = parent[parent_key]
+        # convert lists in ports and volumes from indices to maps
+        if isinstance(element, str) and len(keys)>2 and keys[-2] == 'ports':
+            _, key = element.rsplit(':', maxsplit=1)
+            parent[parent_key] = str(new_value) + ':' + key
+        elif isinstance(element, str) and len(keys)>2 \
+                and keys[-2] in ( 'volumes', 'devices'):
+            if element.count(':'):
+                _, key = element.split(':', maxsplit=1)
+                parent[parent_key] = str(new_value) + ':' + key
+            else:
+                parent[parent_key] = str(new_value) + ':' + keys[-1]
+        # resolve environment key=value pairs
+        elif isinstance(element, str) and '=' in element:
+            key, _ = element.split('=', maxsplit=1)
+            parent[parent_key] = key + '=' + str(new_value)
+        else:
+            parent[parent_key] = new_value
+        return
 
-    def items(self):
+    def items(self) -> Iterator[tuple[str, LeafValueType]]:
         for path, val, _, _ in NestedDictList.__items_converted(self.root):
             yield ('.'.join(map(str,path)), val)
+
+    def iter(self):
+        for key, _ in self.items():
+            yield key
+
+    def __str__(self):
+        return sorted(self.items())
 
     def __len__(self):
         return len(list(self.items()))
@@ -79,29 +113,37 @@ class NestedDictList:
         for key, _ in self.items():
             yield key
 
-    RootType = Union[dict,set,str,int,float]
-    KeyType = Union[str,int] # dict key or list index
-    PathType = List[KeyType] # nested keys
+    __RootType = Union[dict,list,LeafValueType]
+    __KeyType = Union[str,int] # str for dict key or int for list index
+    __KeyListType = List[__KeyType] # Path before joining to '.'-separated
 
     @staticmethod
-    def __items_converted(root: RootType) -> \
-            Iterable[tuple[PathType,
-                           Union[str,int,float],
+    def __items_converted(root: __RootType) -> \
+            Iterator[tuple[__KeyListType,
+                           LeafValueType,
                            Union[dict,list],
-                           KeyType]]:
+                           __KeyType]]:
         """Converted deep-walk of *root* -> iterable(tuple(path, value,
         value_parent, parent_key)).
 
         As *path*s and *value*s are converted, the original key is provided as
-        *parent_key*. This can be used to modify the value in *value_parent*"""
+        *parent_key*. This can be used to modify the value in the backing
+        dict or list: *value_parent*"""
         for path, val, parent in NestedDictList.__items(root):
-            # convert lists in ports and volumes from indices to maps
-            if isinstance(val, str) and len(path)>2 and path[-2] == 'ports':
+            if isinstance(parent, dict):
+                yield (path, val, parent, path[-1])
+            # convert lists in ports, volumes and devices from indices to maps
+            elif isinstance(val, str) and len(path)>2 and path[-2] == 'ports':
                 value, key = val.rsplit(':', maxsplit=1)
                 yield (path[:-1] + [key], value, parent, path[-1])
-            elif isinstance(val, str) and len(path)>2 and path[-2] == 'volumes':
-                value, key = val.split(':', maxsplit=1)
-                yield (path[:-1] + [key], value, parent, path[-1])
+            elif isinstance(val, str) and len(path)>2 and path[-2] in (
+                'volumes', 'devices'):
+                if val.count(':'):
+                    value, key = val.split(':', maxsplit=1)
+                    yield (path[:-1] + [key], value, parent, path[-1])
+                else:
+                    # docker "undocumented feature" key and value assumed the same
+                    yield (path[:-1] + [val], val, parent, path[-1])
             # resolve environment key=value pairs
             elif isinstance(val, str) and '=' in val and len(path)>0:
                 key, value = val.split('=', maxsplit=1)
@@ -111,11 +153,11 @@ class NestedDictList:
 
 
     @staticmethod
-    def __items(root: RootType,
-                key_prefix: PathType = None,
+    def __items(root: __RootType,
+                key_prefix: __KeyListType = None,
                 parent_collection: Union[dict,list] = None) -> \
-            Iterable[ tuple[List[Union[str,int]],
-                            Union[str,int,float],
+            Iterator[ tuple[__KeyListType,
+                            LeafValueType,
                             Union[dict,list]]]:
         """Deep-walk into nested dicts and lists of *root* ->
         iterable(tuple(path, value, value_parent)) for all the leaf values in
@@ -126,7 +168,6 @@ class NestedDictList:
         the nested structure of *root* to the the leaf *value*. *value_parent*
         is the dict or list that contained the leaf *value*.
         """
-        #print('**',collection,max_depth,key_prefix)
         if not key_prefix:
             key_prefix = list()
         if isinstance(root, dict):
@@ -137,13 +178,13 @@ class NestedDictList:
             for index, val in enumerate(root):
                 yield from NestedDictList.__items(val, key_prefix+[index], root)
             return
-        if not root or not isinstance(root, (str, int, float)):
-            raise TypeError(f'{type(root)} is an invalid leaf type'
-                            f'({root}, key_prefix={key_prefix})')
+        if not parent_collection:
+            raise ValueError(f'{root} with key_prefix={key_prefix}'
+                             f' must not have empty parent_collection')
         yield (key_prefix, root, parent_collection)
 
 class TemplateFile:
-    def __init__(self, service_template_yml: str):
+    def __init__(self, service_template_yml: Union[str, Path]):
         self.template_path = Path(service_template_yml)
         self.name = str(self)
         self.bare_yml = yaml.load(self.template_path)
@@ -179,7 +220,7 @@ class TemplateFile:
         the NestedDictList-class."""
         return {path: value
             for path, value in self.yml_view.items()
-            if isinstance(value, str) and len(value.split('%')) >= 2}
+            if isinstance(value, str) and value.count('%') >= 2}
 
     def with_variables(self, variables: Dict[str, str]) -> 'TemplateFile':
         """Return deep copy of the template replacing all variables according
@@ -228,8 +269,8 @@ class Services:
         """Return dict with ports as keys and values as a set of service
         names."""
         ports = {name: template.public_ports()
-                 for name,template in self.templates.items()}
-        conflicts = dict()
+                 for name, template in self.templates.items()}
+        conflicts = dict() # type: Dict[Set[int], Set[str]]
         for service, ports in ports.items():
             for port in ports:
                 port_set = conflicts.setdefault(port, set())
@@ -261,20 +302,35 @@ class __SplitArgs(argparse.Action):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('-v', '--verbose', action='store_true',
-                    help="print extra debugging information")
-    ap.add_argument('-c', '--check', action='store_true',
-                    help='check templates for port conflicts and exit')
-    ap.add_argument('-s', '--service', action='append', dest='services',
+    ap.add_argument('service', action='append', nargs='*',
                     metavar='SERVICE_NAME',
-                    help='''Add or update a service to the stack. May be given
-                    multiple times. To overwrite any custom modifications use
-                    the --recreate flag.''')
-    ap.add_argument('-p', '--variable', action='append',
-                    help='''Add variable to set when adding or updating
-                    services e.g. pihole.password=mysecret ''')
+                    help='''Service to add or update to the stack. Unlisted
+                    services are kept unmodified.''')
+    ap.add_argument('-v', '--verbose', action='store_true',
+                    help="print extra debugging information to stderr")
+    ap.add_argument('-C', '--check', action='store_true',
+                    help='check all templates for port conflicts and exit')
+    ap.add_argument('-N', '--no-backup', action='store_true',
+                    help='''Don't create stack backup before making changes.
+                    Default is to create backup named
+                    "docker-compose.yml.`DATETIME`.bak".''')
     ap.add_argument('-r', '--recreate', action='store_true',
-                    help='Recreate service definitons')
+                    help='''Recreate listed service definitions. Will overwrite
+                    any custom modifications you may have made. Required to
+                    update service definition to their newest IOTstack versions
+                    after a "git pull".''')
+    ap.add_argument('-a', '--assign', action='append', nargs='+',
+                    metavar='ASSIGNMENT',
+                    help='''Add variable assignment to set when adding or
+                    updating services e.g. "pihole.ports.80/tcp=1080".
+                    When updating, variables default to already previous values
+                    read from your current stack file (docker-compose.yml).''')
+    ap.add_argument('-p', '--default-password', dest='password',
+                    help='''Use PASSWORD for all services instead of creating
+                    new random passwords. To update already existing services
+                    use the --recreate flag . Note: some containers will store
+                    passwords into ./volumes, to change such passwords see the
+                    container's documentation.''')
     args = ap.parse_args()
     init_logging(args.verbose)
     logger.debug("Program arguments: %s", args)

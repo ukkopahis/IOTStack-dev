@@ -38,15 +38,21 @@ Services will grow over time, we may split up the buildstack menu into subsectio
 * Any configs that are required before getting the service running should be configured in the service's options menu (and a BuildStack menu Issue should be displayed if not).
 * Fork the repo and push the changes to your fork. Create a cross repo PR for the mods to review. We may request additional changes from you.
 
-## Running python source code tests
+## Follow up
+If your new service is approved and merged then congratulations! Please watch the Issues page on github over the next few days and weeks to see if any users have questions or issues with your new service.
 
+## Python development
+
+Running python source code tests:
 ```
   $ pip install -U --user pytest
   $ python -m pytest
 ```
-
-## Follow up
-If your new service is approved and merged then congratulations! Please watch the Issues page on github over the next few days and weeks to see if any users have questions or issues with your new service.
+Static Python type checking:
+```
+$ pip install -U --user mypy
+$ mypy scripts
+```
 
 Links:
 
