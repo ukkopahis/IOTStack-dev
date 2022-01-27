@@ -180,8 +180,9 @@ class NestedDictList:
         yield (key_prefix, root, parent_collection)
 
 class TemplateFile:
-    def __init__(self, service_template_yml: Union[str, Path]):
-        self.template_path = Path(service_template_yml)
+    """Represents a docker-compose.yml or a template service.yml"""
+    def __init__(self, service_template_yml: Path):
+        self.template_path = service_template_yml
         self.name = str(self)
         self.bare_yml = yaml.load(self.template_path)
         self.yml_view = NestedDictList(self.bare_yml)
@@ -198,7 +199,7 @@ class TemplateFile:
     def public_ports(self) -> Set[int]:
         """Return set of host ports exposed by this template, that may conflict
         with other services."""
-        # TODO: add comment to parse for ports when "network_mode: host"
+        # TODO: add parseable comment "network_mode: host" service templates
         # port may be "bind_addr:public:private" or "public:private"
         return {port.split(':')[-2]
                 for service in self.bare_yml.values()
@@ -297,11 +298,21 @@ class __SplitArgs(argparse.Action):
         setattr(namespace, self.dest, values.split(','))
 
 def main():
-    ap = argparse.ArgumentParser()
+    from argparse import RawDescriptionHelpFormatter
+    ap = argparse.ArgumentParser( formatter_class=RawDescriptionHelpFormatter,
+        epilog=f'''Examples:
+
+    Update stack definitions after "git pull":
+        {os.path.basename(sys.argv[0])} -r current
+
+    Add pihole and wireguard services:
+        {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
+                                 ''')
     ap.add_argument('service', action='append', nargs='*',
                     metavar='SERVICE_NAME',
                     help='''Service to add or update to the stack. Unlisted
-                    services are kept unmodified.''')
+                    services are kept unmodified. Use the special value
+                    "current" for all services currently in the stack.''')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help="print extra debugging information to stderr")
     ap.add_argument('-C', '--check', action='store_true',
@@ -312,9 +323,10 @@ def main():
                     "docker-compose.yml.`DATETIME`.bak".''')
     ap.add_argument('-r', '--recreate', action='store_true',
                     help='''Recreate listed service definitions. Will overwrite
-                    any custom modifications you may have made. Required to
-                    update service definition to their newest IOTstack versions
-                    after a "git pull".''')
+                    any custom modifications you may have made, but preserves
+                    previous variable assignments and generated passwords.
+                    Required to update service definition to their newest
+                    IOTstack versions after a "git pull".''')
     ap.add_argument('-a', '--assign', action='append', nargs='+',
                     metavar='ASSIGNMENT',
                     help='''Add variable assignment to set when adding or
