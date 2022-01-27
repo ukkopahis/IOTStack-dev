@@ -17,9 +17,9 @@ class TemplateFileTestCase(unittest.TestCase):
     def test_public_ports(self):
         self.assertEqual(self.t.public_ports(), {'8089', '53'})
 
-    def test_get_variable_items(self):
+    def test_variable_items(self):
         self.assertEqual(
-            self.t.get_variable_items(),
+            self.t.variable_items(),
             {'mockservice.environment.PW': '%randomPassword%'})
 
     def test_with_variables(self):
@@ -27,6 +27,7 @@ class TemplateFileTestCase(unittest.TestCase):
             {'mockservice.environment.PW': 'testpass' })
         self.assertEqual(res.yml_view.get('mockservice.environment.PW'),
                          'testpass')
+        self.test_variable_items() # check that original is unchanged
         self.assertRaises(ValueError, lambda: self.t.with_variables({}))
 
 class NestedDictListTestCase(unittest.TestCase):

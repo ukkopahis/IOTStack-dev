@@ -99,10 +99,6 @@ class NestedDictList:
         for path, val, _, _ in NestedDictList.__items_converted(self.root):
             yield ('.'.join(map(str,path)), val)
 
-    def iter(self):
-        for key, _ in self.items():
-            yield key
-
     def __str__(self):
         return sorted(self.items())
 
@@ -208,14 +204,14 @@ class TemplateFile:
                 for service in self.bare_yml.values()
                 for port in service.get('ports', []) }
 
-    def get_variable_items(self) -> dict[str, str]:
+    def variable_items(self) -> dict[str, str]:
         """Return paths to dynamic variables defined in the template. These are
-        the variable keys used for with_variables() calls to replace them.
+        the variable keys to use in a with_variables() call to replace them.
 
         Variables are yaml leaf entries containing a variable as the value,
-        e.g.  %foobar%. Paths are the dot-separated yaml dictionary keys or
-        list elements indices leading to such entries. Certain list elements
-        are converted from their list&index to better reflect their semantic
+        e.g. %foobar%. Paths are the dot-separated yaml dictionary keys or list
+        elements indices leading to such entries. Certain list elements are
+        converted from their list&index to better reflect their semantic
         functions in docker-compose. This conversion is done as documented in
         the NestedDictList-class."""
         return {path: value
@@ -230,7 +226,7 @@ class TemplateFile:
         for path, val in variables.items():
             if path in result.yml_view:
                 result.yml_view.set(path, val)
-        unreplaced = result.get_variable_items()
+        unreplaced = result.variable_items()
         if unreplaced:
             raise ValueError(f'Unreplaced variables {unreplaced}')
         return result
