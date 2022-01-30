@@ -10,12 +10,10 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Type, List, Dict, Set, Union
+from typing import Type, List, Dict, Set, Union, Optional
 from collections.abc import Iterator
 from ruamel.yaml import YAML
-from deps.consts import servicesDirectory, templatesDirectory, \
-        volumesDirectory, buildCache, envFile, dockerPathOutput, \
-        servicesFileName, composeOverrideFile
+from deps import consts
 
 logger = logging.getLogger(__name__)
 yaml = YAML()
@@ -152,9 +150,9 @@ class NestedDictList:
     def __items(root: __RootType,
                 key_prefix: __KeyListType = None,
                 parent_collection: Union[dict,list] = None) -> \
-            Iterator[ tuple[__KeyListType,
-                            LeafValueType,
-                            Union[dict,list]]]:
+            Iterator[tuple[__KeyListType,
+                           LeafValueType,
+                           Union[dict,list]]]:
         """Deep-walk into nested dicts and lists of *root* ->
         iterable(tuple(path, value, value_parent)) for all the leaf values in
         the structure. Parameter *key_prefix* is the keys that have been needed
@@ -181,10 +179,10 @@ class NestedDictList:
 
 class TemplateFile:
     """Represents a docker-compose.yml or a template service.yml"""
-    def __init__(self, service_template_yml: Path):
-        self.template_path = service_template_yml
+    def __init__(self, service_yml_path: Path):
+        self.service_yml_path = service_yml_path
         self.name = str(self)
-        self.bare_yml = yaml.load(self.template_path)
+        self.bare_yml = yaml.load(self.service_yml_path)
         self.yml_view = NestedDictList(self.bare_yml)
         logger.debug(f'ServiceTemplate({self.name}) loaded with'
                      f' {len(self.yml_view)} elements'
@@ -192,9 +190,9 @@ class TemplateFile:
         #yaml.dump(self.bare_yml, sys.stderr)
 
     def __str__(self):
-        if self.template_path.name == 'service.yml':
-            return self.template_path.parent.name
-        return self.template_path.name
+        if self.service_yml_path.name == 'service.yml':
+            return self.service_yml_path.parent.name
+        return self.service_yml_path.name
 
     def public_ports(self) -> Set[int]:
         """Return set of host ports exposed by this template, that may conflict
@@ -233,46 +231,46 @@ class TemplateFile:
         return result
 
 class Services:
+    """
+    Access and actions to the ".templates" folder content.
+    """
 
     KNOWN_PORT_CONFLICTS = {53,}
 
-    def __init__(self, template_root=templatesDirectory):
+    def __init__(self, template_folder_path: Path):
         """All templates, per default loads everyting from .templates"""
-        self.templates = {}
-        self.common = set()
-        if template_root:
-            self.__load_templates(template_root)
-        envFile = Path(template_root)/'env.yml'
+        self.service_templates = self.__load_templates(template_folder_path)
+        """Currently loaded TemplateFile:s"""
+        self.env_template = None # type: Optional[TemplateFile]
+        """Common base TemplateFile, if available."""
+        envFile = template_folder_path / 'env.yml'
         if envFile.exists():
-            self.common.add(TemplateFile(envFile))
+            self.env_template = TemplateFile(envFile)
 
-    def get_templates(self):
-        """Currently loaded ServiceTemplate:s"""
-        return self.templates
-
-    def __load_templates(self, templatesDirectory: str):
-        """Append ServiceTemplate:s from every subfolder of templatesDirectory
-        to loaded templates"""
-        if not Path(templatesDirectory).exists():
-            raise ValueError(f"Templates directory doesn't exist: {templatesDirectory}")
-        serviceGlob = sorted(Path(templatesDirectory).glob('*/service.yml'))
+    def __load_templates(self, template_folder_path: Path) \
+            -> Dict[str,TemplateFile]:
+        """Scan for ServiceTemplate:s from every subfolder of
+        template_folder_path to loaded templates"""
+        if not template_folder_path.exists():
+            raise ValueError(f"Templates directory doesn't exist: "
+                             f"{template_folder_path}")
+        serviceGlob = sorted(Path(template_folder_path).glob('*/service.yml'))
         if len(serviceGlob)==0:
-            raise ValueError(f"No templates found in {templatesDirectory}")
-        self.templates |= {service_file.parent.name: TemplateFile(service_file)
+            raise ValueError(f"No templates found in {serviceGlob}")
+        return {service_file.parent.name: TemplateFile(service_file)
                 for service_file in serviceGlob}
-        logger.debug(f'Loaded {len(serviceGlob)} services templates')
 
-    def conflicting_ports(self, verbose=True) -> Dict[Set[int], Set[str]]:
+    def conflicting_ports(self, verbose=True) -> Dict[int, Set[str]]:
         """Return dict with ports as keys and values as a set of service
         names."""
-        ports = {name: template.public_ports()
-                 for name, template in self.templates.items()}
-        conflicts = dict() # type: Dict[Set[int], Set[str]]
-        for service, ports in ports.items():
+        service_ports = {name: template.public_ports()
+                 for name, template in self.service_templates.items()}
+        port_services = dict() # type: Dict[int, Set[str]]
+        for service, ports in service_ports.items():
             for port in ports:
-                port_set = conflicts.setdefault(port, set())
+                port_set = port_services.setdefault(int(port), set())
                 port_set.add(service)
-        conflicts = {port: services for port, services in conflicts.items()
+        conflicts = {port: services for port, services in port_services.items()
                      if len(services)>1}
         for port, services in conflicts.items():
             if int(port) in Services.KNOWN_PORT_CONFLICTS:
@@ -303,7 +301,7 @@ def main():
         epilog=f'''Examples:
 
     Update stack definitions after "git pull":
-        {os.path.basename(sys.argv[0])} -r current
+        {os.path.basename(sys.argv[0])} -r CURRENT
 
     Add pihole and wireguard services:
         {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
@@ -312,7 +310,8 @@ def main():
                     metavar='SERVICE_NAME',
                     help='''Service to add or update to the stack. Unlisted
                     services are kept unmodified. Use the special value
-                    "current" for all services currently in the stack.''')
+                    "CURRENT" to apply operation  all services currently in the
+                    stack.''')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help="print extra debugging information to stderr")
     ap.add_argument('-C', '--check', action='store_true',
@@ -347,11 +346,12 @@ def main():
             print('ERROR: must not specify any services for checking',
                   file=sys.stderr)
             sys.exit(1)
-        Services().conflicting_ports(verbose=True)
+        s = Services(Path(consts.templatesDirectory))
+        s.conflicting_ports(verbose=True)
         return
 
 if __name__ == '__main__':
     main()
-    tc = Services()
-    print(tc.conflicting_ports(verbose=True))
+    s = Services(Path(consts.templatesDirectory))
+    print(s.conflicting_ports(verbose=True))
     #e = ServiceTemplate(Path(templatesDirectory) / 'env.yml')
