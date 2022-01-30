@@ -283,6 +283,19 @@ class Services:
                     services)
         return conflicts
 
+class Stack:
+    """
+    High-level operations for a given docker-compose.yml and .templates folder.
+    """
+    def __init__(self, docker_compose: Path, templates_folder: Path):
+        """Load a docker-compose.yml file as the current state with templates
+        loaded for services loaded from *templates_folder*"""
+        self.current_state = TemplateFile(Path(docker_compose))
+        self.services = Services(templates_folder)
+
+    def selected_services(self) -> Iterator[str]:
+        """Return services present at the current state."""
+
 def init_logging(verbose=False):
     params = {'format': '%(levelname)s: %(message)s'}
     if verbose:
