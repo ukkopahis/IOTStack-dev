@@ -327,6 +327,9 @@ def main():
                     stack.''')
     ap.add_argument('-v', '--verbose', action='store_true',
                     help="print extra debugging information to stderr")
+    ap.add_argument('-l', '--list', action='store_true',
+                    help='''Print out current services in the stack and their
+                    passwords''')
     ap.add_argument('-C', '--check', action='store_true',
                     help='check all templates for port conflicts and exit')
     ap.add_argument('-N', '--no-backup', action='store_true',
@@ -348,9 +351,9 @@ def main():
     ap.add_argument('-p', '--default-password', dest='password',
                     help='''Use PASSWORD for all services instead of creating
                     new random passwords. To update already existing services
-                    use the --recreate flag . Note: some containers will store
-                    passwords into ./volumes, to change such passwords see the
-                    container's documentation.''')
+                    use the --recreate flag. Note: some services will store
+                    passwords into their own databases, to change such
+                    passwords see the container's documentation.''')
     args = ap.parse_args()
     init_logging(args.verbose)
     logger.debug("Program arguments: %s", args)
