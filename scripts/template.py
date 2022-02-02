@@ -9,8 +9,9 @@ import copy
 import logging
 import os
 import sys
+from pprint import pprint
 from pathlib import Path
-from typing import Type, List, Dict, Set, Union, Optional
+from typing import List, Dict, Set, Union, Optional
 from collections.abc import Iterator
 from ruamel.yaml import YAML
 from deps import consts
@@ -51,7 +52,7 @@ class NestedDictList:
         """Construct instance to query and set values into *backing_dict*."""
         self.root = backing_dict
 
-    def get(self, path: PathType) -> LeafValueType:
+    def get(self, path: PathType) -> "NestedDictList.LeafValueType":
         """Get value at converted path *path*."""
         for key, val in self.items():
             if key==path:
@@ -63,11 +64,12 @@ class NestedDictList:
             new_value: LeafValueType) -> None:
         """Set value at converted path *path* to *new_value*."""
         keys = path.split('.')
-        for itemPath, _, parent, parent_key in NestedDictList.__items_converted(self.root):
+        for item_path, _, parent, parent_key in NestedDictList.__items_converted(self.root):
             # find item to edit
-            if list(map(str,itemPath)) == keys:
+            if list(map(str,item_path)) == keys:
                 break
         else:
+            parent, parent_key = None, None # pylint workaround
             raise ValueError(f'No path={path} found in {sorted(self)}')
         if isinstance(parent, dict):
             parent[parent_key] = new_value
@@ -94,6 +96,7 @@ class NestedDictList:
         return
 
     def items(self) -> Iterator[tuple[str, LeafValueType]]:
+        """Generator of converted *path* and *value* pairs."""
         for path, val, _, _ in NestedDictList.__items_converted(self.root):
             yield ('.'.join(map(str,path)), val)
 
@@ -163,7 +166,7 @@ class NestedDictList:
         is the dict or list that contained the leaf *value*.
         """
         if not key_prefix:
-            key_prefix = list()
+            key_prefix = []
         if isinstance(root, dict):
             for key, val in root.items():
                 yield from NestedDictList.__items(val, key_prefix+[key], root)
@@ -184,9 +187,8 @@ class TemplateFile:
         self.name = str(self)
         self.bare_yml = yaml.load(self.service_yml_path)
         self.yml_view = NestedDictList(self.bare_yml)
-        logger.debug(f'ServiceTemplate({self.name}) loaded with'
-                     f' {len(self.yml_view)} elements'
-                     f' from {len(self.bare_yml.keys())} root')
+        logger.debug('ServiceTemplate(%s) loaded with %i elements (%i roots)',
+                     self.name, len(self.yml_view), len(self.bare_yml.keys()))
         #yaml.dump(self.bare_yml, sys.stderr)
 
     def __str__(self):
@@ -239,48 +241,54 @@ class Services:
 
     def __init__(self, template_folder_path: Path):
         """All templates, per default loads everyting from .templates"""
-        self.service_templates = self.__load_templates(template_folder_path)
+        self.service_templates = Services.__load_templates(template_folder_path)
         """Currently loaded TemplateFile:s"""
-        self.env_template = None # type: Optional[TemplateFile]
+        self.env_template = Services.__load_env(template_folder_path)
         """Common base TemplateFile, if available."""
-        envFile = template_folder_path / 'env.yml'
-        if envFile.exists():
-            self.env_template = TemplateFile(envFile)
 
-    def __load_templates(self, template_folder_path: Path) \
+    @staticmethod
+    def __load_env(template_folder_path: Path) -> Optional[TemplateFile]:
+        env_file = template_folder_path / 'env.yml'
+        if env_file.exists():
+            return TemplateFile(env_file)
+        return None
+
+    @staticmethod
+    def __load_templates(template_folder_path: Path) \
             -> Dict[str,TemplateFile]:
         """Scan for ServiceTemplate:s from every subfolder of
         template_folder_path to loaded templates"""
         if not template_folder_path.exists():
             raise ValueError(f"Templates directory doesn't exist: "
                              f"{template_folder_path}")
-        serviceGlob = sorted(Path(template_folder_path).glob('*/service.yml'))
-        if len(serviceGlob)==0:
-            raise ValueError(f"No templates found in {serviceGlob}")
+        service_glob = sorted(Path(template_folder_path).glob('*/service.yml'))
+        if len(service_glob)==0:
+            raise ValueError(f"No templates found in {service_glob}")
         return {service_file.parent.name: TemplateFile(service_file)
-                for service_file in serviceGlob}
+                for service_file in service_glob}
 
     def conflicting_ports(self, verbose=True) -> Dict[int, Set[str]]:
         """Return dict with ports as keys and values as a set of service
         names."""
         service_ports = {name: template.public_ports()
                  for name, template in self.service_templates.items()}
-        port_services = dict() # type: Dict[int, Set[str]]
+        port_services = {} # type: Dict[int, Set[str]]
         for service, ports in service_ports.items():
             for port in ports:
                 port_set = port_services.setdefault(int(port), set())
                 port_set.add(service)
         conflicts = {port: services for port, services in port_services.items()
                      if len(services)>1}
-        for port, services in conflicts.items():
-            if int(port) in Services.KNOWN_PORT_CONFLICTS:
-                logging.info('Services using port %s: %s'
-                             ' but users are meant to pick only one of these',
-                             port, services)
-            else:
-                logging.warning(
-                    "Services using the SAME CONFLICTING port %s: %s", port,
-                    services)
+        if verbose:
+            for port, services in conflicts.items():
+                if int(port) in Services.KNOWN_PORT_CONFLICTS:
+                    logging.info('Services using port %s: %s but users'
+                                 ' are meant to pick only one of these',
+                                 port, services)
+                else:
+                    logging.warning(
+                        "Services using the SAME CONFLICTING port %s: %s", port,
+                        services)
         return conflicts
 
 class Stack:
@@ -304,70 +312,66 @@ def init_logging(verbose=False):
                             '%(levelname)s: %(message)s')
     logging.basicConfig(stream=sys.stderr, **params)
 
-class __SplitArgs(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        setattr(namespace, self.dest, values.split(','))
-
 def main():
-    from argparse import RawDescriptionHelpFormatter
-    ap = argparse.ArgumentParser( formatter_class=RawDescriptionHelpFormatter,
+    arpa = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f'''Examples:
 
-    Update stack definitions after "git pull":
+    To update current service definitions after a "git pull":
         {os.path.basename(sys.argv[0])} -r CURRENT
 
     Add pihole and wireguard services:
         {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
                                  ''')
-    ap.add_argument('service', action='append', nargs='*',
+    arpa.add_argument('service', action='append', nargs='*',
                     metavar='SERVICE_NAME',
                     help='''Service to add or update to the stack. Unlisted
                     services are kept unmodified. Use the special value
                     "CURRENT" to apply operation  all services currently in the
                     stack.''')
-    ap.add_argument('-v', '--verbose', action='store_true',
+    arpa.add_argument('-v', '--verbose', action='store_true',
                     help="print extra debugging information to stderr")
-    ap.add_argument('-l', '--list', action='store_true',
+    arpa.add_argument('-l', '--list', action='store_true',
                     help='''Print out current services in the stack and their
                     passwords''')
-    ap.add_argument('-C', '--check', action='store_true',
+    arpa.add_argument('-C', '--check', action='store_true',
                     help='check all templates for port conflicts and exit')
-    ap.add_argument('-N', '--no-backup', action='store_true',
+    arpa.add_argument('-N', '--no-backup', action='store_true',
                     help='''Don't create stack backup before making changes.
                     Default is to create backup named
                     "docker-compose.yml.`DATETIME`.bak".''')
-    ap.add_argument('-r', '--recreate', action='store_true',
+    arpa.add_argument('-r', '--recreate', action='store_true',
                     help='''Recreate listed service definitions. Will overwrite
                     any custom modifications you may have made, but preserves
                     previous variable assignments and generated passwords.
                     Required to update service definition to their newest
                     IOTstack versions after a "git pull".''')
-    ap.add_argument('-a', '--assign', action='append', nargs='+',
-                    metavar='ASSIGNMENT',
+    arpa.add_argument('-a', '--assign', action='append', nargs='+',
+                    metavar='KEY=VALUE',
                     help='''Add variable assignment to set when adding or
                     updating services e.g. "pihole.ports.80/tcp=1080".
                     When updating, variables default to already previous values
                     read from your current stack file (docker-compose.yml).''')
-    ap.add_argument('-p', '--default-password', dest='password',
+    arpa.add_argument('-p', '--default-password', dest='password',
                     help='''Use PASSWORD for all services instead of creating
                     new random passwords. To update already existing services
                     use the --recreate flag. Note: some services will store
                     passwords into their own databases, to change such
                     passwords see the container's documentation.''')
-    args = ap.parse_args()
+    args = arpa.parse_args()
     init_logging(args.verbose)
     logger.debug("Program arguments: %s", args)
     if args.check:
         if args.services:
             print('ERROR: must not specify any services for checking',
                   file=sys.stderr)
-            sys.exit(1)
-        s = Services(Path(consts.templatesDirectory))
-        s.conflicting_ports(verbose=True)
-        return
+            sys.exit(99)
+        services = Services(Path(consts.templatesDirectory))
+        conflicts = services.conflicting_ports(verbose=True)
+        sys.exit(int(len(conflicts) > 0))
 
 if __name__ == '__main__':
     main()
     s = Services(Path(consts.templatesDirectory))
-    print(s.conflicting_ports(verbose=True))
+    pprint(s.conflicting_ports(verbose=False))
     #e = ServiceTemplate(Path(templatesDirectory) / 'env.yml')

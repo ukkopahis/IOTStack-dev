@@ -96,4 +96,3 @@ class NestedDictListTestCase(unittest.TestCase):
         self.assertEqual( self.query.get('pihole.privileged'), False)
         self.assertRaises(ValueError, lambda: self.query.set('service.none.existant', 0))
         self.assertEqual( len(self.query), self.leaf_count) # no new elements
-
