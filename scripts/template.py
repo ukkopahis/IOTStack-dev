@@ -69,7 +69,8 @@ class NestedDictList:
             if list(map(str,item_path)) == keys:
                 break
         else:
-            parent, parent_key = None, None # pylint workaround
+            # pylint false positive warning workaround
+            parent, parent_key = None, None # type: ignore
             raise ValueError(f'No path={path} found in {sorted(self)}')
         if isinstance(parent, dict):
             parent[parent_key] = new_value

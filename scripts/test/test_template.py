@@ -1,10 +1,15 @@
-import sys
+"""Tests for template.py"""
 import unittest
 from pathlib import Path
 import template
 
-class TemplateFileTestCase(unittest.TestCase):
+class StackTestCase(unittest.TestCase):
+    """Stack class tests"""
+    def setUp(self):
+        self.t = ''
 
+class TemplateFileTestCase(unittest.TestCase):
+    """TemplateFile class tests"""
     def setUp(self):
         self.t = template.TemplateFile(Path(
             'scripts/test/template_test/mockservice/service.yml'))
@@ -32,6 +37,7 @@ class TemplateFileTestCase(unittest.TestCase):
         self.assertRaises(ValueError, lambda: self.t.with_variables({}))
 
 class NestedDictListTestCase(unittest.TestCase):
+    """NestedDictList class tests"""
 
     def setUp(self):
         self.query = template.NestedDictList({
