@@ -11,8 +11,8 @@ class StackTestCase(unittest.TestCase):
 class TemplateFileTestCase(unittest.TestCase):
     """TemplateFile class tests"""
     def setUp(self):
-        self.t = template.TemplateFile(Path(
-            'scripts/test/template_test/mockservice/service.yml'))
+        self.t = template.TemplateFile(
+            Path('scripts/test/template_test/mockservice/service.yml'))
 
     def test_yml_view(self):
         view = sorted(self.t.yml_view.items())

@@ -1,7 +1,12 @@
 #!/usr/bin/python3
 """
-Module to load and write docker-compose.yml files or service.yml snippets.
-Methods to find variables and easily allows writing values into them.
+Module to load and write docker-compose.yml files based service.yml template
+snippets.
+
+Note that the term "service" is used for both docker services and menu.sh
+service selection. For clarity this source code and its docs will use the term
+"template" for menu.sh-services, and "service" for docker-services. A template
+may contain multiple services.
 """
 
 import argparse
@@ -233,7 +238,7 @@ class TemplateFile:
             raise ValueError(f'Unreplaced variables {unreplaced}')
         return result
 
-class Services:
+class Templates:
     """
     Access and actions to the ".templates" folder content.
     """
@@ -242,9 +247,9 @@ class Services:
 
     def __init__(self, template_folder_path: Path):
         """All templates, per default loads everyting from .templates"""
-        self.service_templates = Services.__load_templates(template_folder_path)
+        self.service_templates = Templates.__load_templates(template_folder_path)
         """Currently loaded TemplateFile:s"""
-        self.env_template = Services.__load_env(template_folder_path)
+        self.env_template = Templates.__load_env(template_folder_path)
         """Common base TemplateFile, if available."""
 
     @staticmethod
@@ -282,7 +287,7 @@ class Services:
                      if len(services)>1}
         if verbose:
             for port, services in conflicts.items():
-                if int(port) in Services.KNOWN_PORT_CONFLICTS:
+                if int(port) in Templates.KNOWN_PORT_CONFLICTS:
                     logging.info('Services using port %s: %s but users'
                                  ' are meant to pick only one of these',
                                  port, services)
@@ -300,10 +305,13 @@ class Stack:
         """Load a docker-compose.yml file as the current state with templates
         loaded for services loaded from *templates_folder*"""
         self.current_state = TemplateFile(Path(docker_compose))
-        self.services = Services(templates_folder)
+        self.templates = Templates(templates_folder)
 
-    def selected_services(self) -> Iterator[str]:
-        """Return services present at the current state."""
+    def selected_templates(self) -> Iterator[str]:
+        """Return templates selected in the current state. Some templates may
+        include multiple docker-services, only the service with the same name
+        as the template selects the template."""
+        services = self.current_state.bare_yml['services'].keys()
 
 def init_logging(verbose=False):
     params = {'format': '%(levelname)s: %(message)s'}
@@ -314,7 +322,7 @@ def init_logging(verbose=False):
     logging.basicConfig(stream=sys.stderr, **params)
 
 def main():
-    arpa = argparse.ArgumentParser(
+    args = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f'''Examples:
 
@@ -324,42 +332,42 @@ def main():
     Add pihole and wireguard services:
         {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
                                  ''')
-    arpa.add_argument('service', action='append', nargs='*',
+    args.add_argument('service', action='append', nargs='*',
                     metavar='SERVICE_NAME',
                     help='''Service to add or update to the stack. Unlisted
                     services are kept unmodified. Use the special value
                     "CURRENT" to apply operation  all services currently in the
                     stack.''')
-    arpa.add_argument('-v', '--verbose', action='store_true',
+    args.add_argument('-v', '--verbose', action='store_true',
                     help="print extra debugging information to stderr")
-    arpa.add_argument('-l', '--list', action='store_true',
+    args.add_argument('-l', '--list', action='store_true',
                     help='''Print out current services in the stack and their
                     passwords''')
-    arpa.add_argument('-C', '--check', action='store_true',
+    args.add_argument('-C', '--check', action='store_true',
                     help='check all templates for port conflicts and exit')
-    arpa.add_argument('-N', '--no-backup', action='store_true',
+    args.add_argument('-N', '--no-backup', action='store_true',
                     help='''Don't create stack backup before making changes.
                     Default is to create backup named
                     "docker-compose.yml.`DATETIME`.bak".''')
-    arpa.add_argument('-r', '--recreate', action='store_true',
+    args.add_argument('-r', '--recreate', action='store_true',
                     help='''Recreate listed service definitions. Will overwrite
                     any custom modifications you may have made, but preserves
                     previous variable assignments and generated passwords.
                     Required to update service definition to their newest
                     IOTstack versions after a "git pull".''')
-    arpa.add_argument('-a', '--assign', action='append', nargs='+',
+    args.add_argument('-a', '--assign', action='append', nargs='+',
                     metavar='KEY=VALUE',
                     help='''Add variable assignment to set when adding or
                     updating services e.g. "pihole.ports.80/tcp=1080".
                     When updating, variables default to already previous values
                     read from your current stack file (docker-compose.yml).''')
-    arpa.add_argument('-p', '--default-password', dest='password',
+    args.add_argument('-p', '--default-password', dest='password',
                     help='''Use PASSWORD for all services instead of creating
                     new random passwords. To update already existing services
                     use the --recreate flag. Note: some services will store
                     passwords into their own databases, to change such
                     passwords see the container's documentation.''')
-    args = arpa.parse_args()
+    args = args.parse_args()
     init_logging(args.verbose)
     logger.debug("Program arguments: %s", args)
     if args.check:
@@ -367,12 +375,12 @@ def main():
             print('ERROR: must not specify any services for checking',
                   file=sys.stderr)
             sys.exit(99)
-        services = Services(Path(consts.templatesDirectory))
+        services = Templates(Path(consts.templatesDirectory))
         conflicts = services.conflicting_ports(verbose=True)
         sys.exit(int(len(conflicts) > 0))
 
 if __name__ == '__main__':
     main()
-    s = Services(Path(consts.templatesDirectory))
+    s = Templates(Path(consts.templatesDirectory))
     pprint(s.conflicting_ports(verbose=False))
     #e = ServiceTemplate(Path(templatesDirectory) / 'env.yml')
