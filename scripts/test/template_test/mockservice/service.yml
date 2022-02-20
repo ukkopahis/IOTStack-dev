@@ -23,3 +23,6 @@ mockservice:
     - NET_ADMIN
   privileged: true
   restart: unless-stopped
+
+service2:
+  image: service2

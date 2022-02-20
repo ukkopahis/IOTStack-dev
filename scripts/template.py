@@ -307,13 +307,15 @@ class Stack:
         self.current_state = TemplateFile(Path(docker_compose))
         self.templates = Templates(templates_folder)
 
-    def selected_templates(self) -> Iterator[str]:
+    def selected_templates(self) -> Set[str]:
         """Return templates selected in the current state. Some templates may
-        include multiple docker-services, only the service with the same name
-        as the template selects the template."""
+        include multiple docker-services, but only the service with the same
+        name as the template selects the template."""
         services = self.current_state.bare_yml['services'].keys()
+        templates = self.templates.service_templates.keys()
+        return services & templates
 
-def init_logging(verbose=False):
+def init_logger(verbose=False):
     params = {'format': '%(levelname)s: %(message)s'}
     if verbose:
         params['level'] = logging.DEBUG
@@ -322,7 +324,7 @@ def init_logging(verbose=False):
     logging.basicConfig(stream=sys.stderr, **params)
 
 def main():
-    args = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f'''Examples:
 
@@ -332,55 +334,61 @@ def main():
     Add pihole and wireguard services:
         {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
                                  ''')
-    args.add_argument('service', action='append', nargs='*',
-                    metavar='SERVICE_NAME',
-                    help='''Service to add or update to the stack. Unlisted
-                    services are kept unmodified. Use the special value
-                    "CURRENT" to apply operation  all services currently in the
-                    stack.''')
-    args.add_argument('-v', '--verbose', action='store_true',
+    parser.add_argument('services', action='append', nargs='*',
+                    metavar='CONTAINER_NAME',
+                    help='''Service container to add or update to the stack.
+                    Unlisted services are kept unmodified. Use the special
+                    value "CURRENT" to apply operation all services currently
+                    in the stack.''')
+    parser.add_argument('-v', '--verbose', action='store_true',
                     help="print extra debugging information to stderr")
-    args.add_argument('-l', '--list', action='store_true',
+    parser.add_argument('-l', '--list', action='store_true',
                     help='''Print out current services in the stack and their
                     passwords''')
-    args.add_argument('-C', '--check', action='store_true',
-                    help='check all templates for port conflicts and exit')
-    args.add_argument('-N', '--no-backup', action='store_true',
+    parser.add_argument('-N', '--no-backup', action='store_true',
                     help='''Don't create stack backup before making changes.
                     Default is to create backup named
                     "docker-compose.yml.`DATETIME`.bak".''')
-    args.add_argument('-r', '--recreate', action='store_true',
+    parser.add_argument('-r', '--recreate', action='store_true',
                     help='''Recreate listed service definitions. Will overwrite
                     any custom modifications you may have made, but preserves
                     previous variable assignments and generated passwords.
                     Required to update service definition to their newest
                     IOTstack versions after a "git pull".''')
-    args.add_argument('-a', '--assign', action='append', nargs='+',
+    parser.add_argument('-a', '--assign', action='append', nargs='+',
                     metavar='KEY=VALUE',
                     help='''Add variable assignment to set when adding or
                     updating services e.g. "pihole.ports.80/tcp=1080".
                     When updating, variables default to already previous values
                     read from your current stack file (docker-compose.yml).''')
-    args.add_argument('-p', '--default-password', dest='password',
+    parser.add_argument('-p', '--default-password', dest='password',
                     help='''Use PASSWORD for all services instead of creating
                     new random passwords. To update already existing services
                     use the --recreate flag. Note: some services will store
                     passwords into their own databases, to change such
                     passwords see the container's documentation.''')
-    args = args.parse_args()
-    init_logging(args.verbose)
+    dev_group = parser.add_argument_group('Container template development')
+    dev_group.add_argument('-C', '--check', action='store_true',
+                    help='check all templates for port conflicts and exit')
+    args = parser.parse_args()
+    init_logger(args.verbose)
     logger.debug("Program arguments: %s", args)
     if args.check:
-        if args.services:
+        if args.templates:
             print('ERROR: must not specify any services for checking',
                   file=sys.stderr)
             sys.exit(99)
-        services = Templates(Path(consts.templatesDirectory))
-        conflicts = services.conflicting_ports(verbose=True)
+        templates = Templates(Path(consts.templatesDirectory))
+        conflicts = templates.conflicting_ports(verbose=True)
         sys.exit(int(len(conflicts) > 0))
+    elif args.list:
+        stack = Stack(Path('docker-compose.yml'), Path('.templates'))
+        for template in stack.selected_templates(): print(template)
+    else:
+        parser.print_usage()
 
 if __name__ == '__main__':
     main()
-    s = Templates(Path(consts.templatesDirectory))
-    pprint(s.conflicting_ports(verbose=False))
+    #s = Templates(Path(consts.templatesDirectory))
+    #pprint(s.conflicting_ports(verbose=False))
     #e = ServiceTemplate(Path(templatesDirectory) / 'env.yml')

@@ -6,7 +6,13 @@ import template
 class StackTestCase(unittest.TestCase):
     """Stack class tests"""
     def setUp(self):
-        self.t = ''
+        self.stack = template.Stack(
+            Path('scripts/test/template_test/docker-compose.yml'),
+            Path('scripts/test/template_test/'))
+
+    def test_selected_templates(self):
+        selected = self.stack.selected_templates()
+        self.assertSetEqual( selected, {'mockservice',})
 
 class TemplateFileTestCase(unittest.TestCase):
     """TemplateFile class tests"""
