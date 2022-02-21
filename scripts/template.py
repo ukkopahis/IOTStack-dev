@@ -4,9 +4,14 @@ Module to load and write docker-compose.yml files based service.yml template
 snippets.
 
 Note that the term "service" is used for both docker services and menu.sh
-service selection. For clarity this source code and its docs will use the term
-"template" for menu.sh-services, and "service" for docker-services. A template
-may contain multiple services.
+service selection. For clarity this source code internally will use the term:
+
+* "template" for the menu.sh-selections, i.e. .templates-subfolders.
+* "service" for the docker service containers, as defined in
+  docker-compose.yml. A template may thus contain multiple services.
+
+To be consistent with /docs-documentation and menu.sh terminology, user visible
+messages will still only use the term "container".
 """
 
 import argparse
@@ -185,7 +190,7 @@ class NestedDictList:
         yield (key_prefix, root, parent_collection)
 
 class TemplateFile:
-    """Represents a docker-compose.yml or a template service.yml"""
+    """Represents a docker-compose.yml or a template's service.yml"""
     def __init__(self, service_yml_path: Path):
         self.service_yml_path = service_yml_path
         self.name = str(self)
@@ -225,7 +230,7 @@ class TemplateFile:
 
     def with_variables(self, variables: Dict[str, str]) -> 'TemplateFile':
         """Return deep copy of the template replacing all variables according
-        to their paths.  Will raise ValueError if there are unreplaced
+        to their paths. Will raise ValueError if there are unreplaced
         variables left."""
         result = copy.deepcopy(self)
         for path, val in variables.items():
@@ -333,7 +338,7 @@ def main():
         prog=prog_name,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''Examples:
-    List all available container services:
+    List all available containers:
         %(prog)s -l
 
     Add pihole and wireguard services:
@@ -345,29 +350,29 @@ def main():
     ap_operations = ap.add_argument_group('Operation, use exactly one')
     op = ap_operations.add_mutually_exclusive_group(required=True)
     op.add_argument('-L', '--list', action='store_true',
-                    help='''Print out current container services in the stack
-                    and their passwords''')
+                    help='''Print out current containers in the stack and their
+                    passwords''')
     op.add_argument('-R', '--recreate', action='store_true',
-                    help='''Add or recreate listed service definitions and add
-                    will overwrite any custom modifications you may have made,
-                    but preserves previous passwords.''')
+                    help='''Add or recreate listed container definitions and
+                    add will overwrite any custom modifications you may have
+                    made, but preserves previous passwords.''')
     op.add_argument('-U', '--update', action='store_true',
-                    help='''Add or update listed container service definitions.
+                    help='''Add or update listed container definitions.
                     Preserves previous variable assignments, generated
                     passwords and manual customizations. In certain
                     corner-cases this will result in an invalid configuration.
                     Use --recreate to correct in such a case.''')
     op.add_argument('-D', '--delete', action='store_true',
-                    help='Remove listed container services from the stack.')
+                    help='Remove listed containers from the stack.')
     op.add_argument('-C', '--check', action='store_true',
                     help='''Check all templates for port conflicts and exit.
-                    Use during service container template development.''')
+                    Use during container template development.''')
     ap.add_argument('templates', action='store', nargs='*',
-                    metavar='CONTAINER_SERVICE_NAME',
-                    help='''Container service to add or update to the stack.
-                    Unlisted services are kept unmodified. Use the special
-                    value "CURRENT" to apply operation all services currently
-                    added to the stack.''')
+                    metavar='CONTAINER_NAME',
+                    help='''Container to add or update to the stack. Unlisted
+                    containers are kept unmodified. Use the special
+                    value "CURRENT" to apply operation for all added
+                    containers.''')
     ap.add_argument('-v', '--verbose', action='count', default=0,
                     help='''Print extra information to stderr. Use twice for
                     debug information.''')
@@ -378,13 +383,13 @@ def main():
     ap.add_argument('-a', '--assign', action='append', nargs='+',
                     metavar='KEY=VALUE',
                     help='''Add variable assignment to set when adding or
-                    updating services e.g. "pihole.ports.80/tcp=1080".  When
+                    updating containers e.g. "pihole.ports.80/tcp=1080". When
                     updating, variables default to already previous values read
                     from your current stack file (docker-compose.yml).''')
     ap.add_argument('-p', '--default-password', dest='password',
-                    help='''Use PASSWORD for all services instead of creating
-                    new random passwords. To update already existing services
-                    use the --recreate flag. Note: some services will store
+                    help='''Use PASSWORD for all containers instead of creating
+                    new random passwords. To update already existing containers
+                    use the --recreate flag. Note: some containers will store
                     passwords into their own databases, to change such
                     passwords see the container's documentation.''')
     args = ap.parse_args()
