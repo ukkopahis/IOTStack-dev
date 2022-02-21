@@ -42,7 +42,7 @@ class NestedDictList:
       * If it is parsable as "KEY=VALUE" (i.e. has a '=' -character)
       * If the containing list's parent's key is 'ports', 'volumes' or
         'devices', and the leaf value is parsable as "VALUE:KEY". For a leaf
-        value with two ':'-characters, it's split at the first occurance,
+        value with two ':'-characters, it's split at the first occurrence,
         unless the parent key is 'ports', which is split at the last.
     Such converted entries have the parsed KEY replacing the list-index in the
     PATH and have their value replaced with parsed VALUE.
@@ -70,7 +70,7 @@ class NestedDictList:
         """Set value at converted path *path* to *new_value*."""
         keys = path.split('.')
         for item_path, _, parent, parent_key in NestedDictList.__items_converted(self.root):
-            # find item to edit
+            # find item to set
             if list(map(str,item_path)) == keys:
                 break
         else:
@@ -80,7 +80,7 @@ class NestedDictList:
         if isinstance(parent, dict):
             parent[parent_key] = new_value
             return
-        assert isinstance(parent_key, int)
+        assert isinstance(parent_key, int) and isinstance(parent, list)
         element = parent[parent_key]
         # convert lists in ports and volumes from indices to maps
         if isinstance(element, str) and len(keys)>2 and keys[-2] == 'ports':
@@ -126,8 +126,8 @@ class NestedDictList:
                            LeafValueType,
                            Union[dict,list],
                            __KeyType]]:
-        """Converted deep-walk of *root* -> iterable(tuple(path, value,
-        value_parent, parent_key)).
+        """Converted deep-walk of *root* -> Iterator(tuple(path, value,
+        value_parent, parent_key)). Returned iterator lists all leaf values.
 
         As *path*s and *value*s are converted, the original key is provided as
         *parent_key*. This can be used to modify the value in the backing
@@ -308,9 +308,10 @@ class Stack:
         self.templates = Templates(templates_folder)
 
     def selected_templates(self) -> Set[str]:
-        """Return templates selected in the current state. Some templates may
-        include multiple docker-services, but only the service with the same
-        name as the template selects the template."""
+        """Return templates selected in the current docker-compose.yml. Some
+        templates may include multiple docker-services, but a template is
+        considered selected, as long as a there is a service with the same name
+        as the template."""
         services = self.current_state.bare_yml['services'].keys()
         templates = self.templates.service_templates.keys()
         return services & templates
@@ -375,7 +376,7 @@ def main():
     logger.debug("Program arguments: %s", args)
     if args.check:
         if args.templates:
-            print('ERROR: must not specify any services for checking',
+            print('ERROR: must not specify any containers for checking',
                   file=sys.stderr)
             sys.exit(99)
         templates = Templates(Path(consts.templatesDirectory))
