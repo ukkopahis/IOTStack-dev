@@ -12,7 +12,6 @@ may contain multiple services.
 import argparse
 import copy
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Set, Union, Optional
@@ -327,22 +326,22 @@ def init_logger(verbosity: int):
     logging.basicConfig(format=msg_format, level=level, stream=sys.stderr)
 
 def main():
+    prog_name=None
+    if len(sys.argv) >= 3 and sys.argv[1] == '--prog':
+        prog_name = sys.argv[2]
     ap = argparse.ArgumentParser(
-        add_help=False,
+        prog=prog_name,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f'''Examples:
-
+        epilog='''Examples:
     List all available container services:
-        {os.path.basename(sys.argv[0])} -l
-        {sys.executable} -l
-        {sys.argv[0]} -l
+        %(prog)s -l
 
     Add pihole and wireguard services:
-        {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
+        %(prog)s -p secret_password pihole wireguard
 
     To update current service definitions after a "git pull":
-        {os.path.basename(sys.argv[0])} -r CURRENT
-        ''')
+        %(prog)s -r CURRENT''')
+    ap.add_argument('--prog', help=argparse.SUPPRESS)
     ap_operations = ap.add_argument_group('Operation, use exactly one')
     op = ap_operations.add_mutually_exclusive_group(required=True)
     op.add_argument('-L', '--list', action='store_true',

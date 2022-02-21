@@ -3,6 +3,7 @@
 /volumes/
 /backups/
 /.tmp/*
+/.virtualenv/
 __pycache__
 docker-compose.yml
 compose-override.yml
