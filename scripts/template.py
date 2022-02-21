@@ -14,7 +14,6 @@ import copy
 import logging
 import os
 import sys
-from pprint import pprint
 from pathlib import Path
 from typing import List, Dict, Set, Union, Optional
 from collections.abc import Iterator
@@ -316,62 +315,80 @@ class Stack:
         templates = self.templates.service_templates.keys()
         return services & templates
 
-def init_logger(verbose=False):
-    params = {'format': '%(levelname)s: %(message)s'}
-    if verbose:
-        params['level'] = logging.DEBUG
-        params['format'] = ('[%(filename)s:%(lineno)s/%(funcName)17s]'
+def init_logger(verbosity: int):
+    level = logging.ERROR
+    msg_format = '%(levelname)s: %(message)s'
+    if verbosity >= 1:
+        level = logging.INFO
+    if verbosity >= 2:
+        level = logging.DEBUG
+        msg_format = ('[%(filename)s:%(lineno)s/%(funcName)17s]'
                             '%(levelname)s: %(message)s')
-    logging.basicConfig(stream=sys.stderr, **params)
+    logging.basicConfig(format=msg_format, level=level, stream=sys.stderr)
 
 def main():
-    parser = argparse.ArgumentParser(
+    ap = argparse.ArgumentParser(
+        add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f'''Examples:
 
-    To update current service definitions after a "git pull":
-        {os.path.basename(sys.argv[0])} -r CURRENT
+    List all available container services:
+        {os.path.basename(sys.argv[0])} -l
+        {sys.executable} -l
+        {sys.argv[0]} -l
 
     Add pihole and wireguard services:
         {os.path.basename(sys.argv[0])} -p secret_password pihole wireguard
-                                 ''')
-    parser.add_argument('services', action='append', nargs='*',
-                    metavar='CONTAINER_NAME',
-                    help='''Service container to add or update to the stack.
+
+    To update current service definitions after a "git pull":
+        {os.path.basename(sys.argv[0])} -r CURRENT
+        ''')
+    ap_operations = ap.add_argument_group('Operation, use exactly one')
+    op = ap_operations.add_mutually_exclusive_group(required=True)
+    op.add_argument('-L', '--list', action='store_true',
+                    help='''Print out current container services in the stack
+                    and their passwords''')
+    op.add_argument('-R', '--recreate', action='store_true',
+                    help='''Add or recreate listed service definitions and add
+                    will overwrite any custom modifications you may have made,
+                    but preserves previous passwords.''')
+    op.add_argument('-U', '--update', action='store_true',
+                    help='''Add or update listed container service definitions.
+                    Preserves previous variable assignments, generated
+                    passwords and manual customizations. In certain
+                    corner-cases this will result in an invalid configuration.
+                    Use --recreate to correct in such a case.''')
+    op.add_argument('-D', '--delete', action='store_true',
+                    help='Remove listed container services from the stack.')
+    op.add_argument('-C', '--check', action='store_true',
+                    help='''Check all templates for port conflicts and exit.
+                    Use during service container template development.''')
+    ap.add_argument('templates', action='store', nargs='*',
+                    metavar='CONTAINER_SERVICE_NAME',
+                    help='''Container service to add or update to the stack.
                     Unlisted services are kept unmodified. Use the special
                     value "CURRENT" to apply operation all services currently
-                    in the stack.''')
-    parser.add_argument('-v', '--verbose', action='store_true',
-                    help="print extra debugging information to stderr")
-    parser.add_argument('-l', '--list', action='store_true',
-                    help='''Print out current services in the stack and their
-                    passwords''')
-    parser.add_argument('-N', '--no-backup', action='store_true',
-                    help='''Don't create stack backup before making changes.
-                    Default is to create backup named
+                    added to the stack.''')
+    ap.add_argument('-v', '--verbose', action='count', default=0,
+                    help='''Print extra information to stderr. Use twice for
+                    debug information.''')
+    ap.add_argument('-n', '--no-backup', dest='backup', action='store_false',
+                    help='''Don't create backup before writing changes. Default
+                    is to create backup named
                     "docker-compose.yml.`DATETIME`.bak".''')
-    parser.add_argument('-r', '--recreate', action='store_true',
-                    help='''Recreate listed service definitions. Will overwrite
-                    any custom modifications you may have made, but preserves
-                    previous variable assignments and generated passwords.
-                    Required to update service definition to their newest
-                    IOTstack versions after a "git pull".''')
-    parser.add_argument('-a', '--assign', action='append', nargs='+',
+    ap.add_argument('-a', '--assign', action='append', nargs='+',
                     metavar='KEY=VALUE',
                     help='''Add variable assignment to set when adding or
-                    updating services e.g. "pihole.ports.80/tcp=1080".
-                    When updating, variables default to already previous values
-                    read from your current stack file (docker-compose.yml).''')
-    parser.add_argument('-p', '--default-password', dest='password',
+                    updating services e.g. "pihole.ports.80/tcp=1080".  When
+                    updating, variables default to already previous values read
+                    from your current stack file (docker-compose.yml).''')
+    ap.add_argument('-p', '--default-password', dest='password',
                     help='''Use PASSWORD for all services instead of creating
                     new random passwords. To update already existing services
                     use the --recreate flag. Note: some services will store
                     passwords into their own databases, to change such
                     passwords see the container's documentation.''')
-    dev_group = parser.add_argument_group('Container template development')
-    dev_group.add_argument('-C', '--check', action='store_true',
-                    help='check all templates for port conflicts and exit')
-    args = parser.parse_args()
+    args = ap.parse_args()
     init_logger(args.verbose)
     logger.debug("Program arguments: %s", args)
     if args.check:
@@ -384,12 +401,11 @@ def main():
         sys.exit(int(len(conflicts) > 0))
     elif args.list:
         stack = Stack(Path('docker-compose.yml'), Path('.templates'))
-        for template in stack.selected_templates(): print(template)
+        for template in stack.selected_templates():
+            print(template)
     else:
-        parser.print_usage()
+        logger.error('No operating mode selected')
+        ap.print_usage()
 
 if __name__ == '__main__':
     main()
-    #s = Templates(Path(consts.templatesDirectory))
-    #pprint(s.conflicting_ports(verbose=False))
-    #e = ServiceTemplate(Path(templatesDirectory) / 'env.yml')
