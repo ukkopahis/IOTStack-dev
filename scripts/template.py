@@ -410,8 +410,21 @@ def main():
         sys.exit(int(len(conflicts) > 0))
     elif args.list:
         stack = Stack(Path('docker-compose.yml'), Path('.templates'))
-        for template in stack.selected_templates():
-            print(template)
+        if 'ALL' in args.templates:
+            for template in stack.templates.service_templates.keys():
+                print(template)
+        else:
+            for service_name in sorted(stack.selected_templates()):
+                print(service_name)
+                template = stack.templates.service_templates[service_name]
+                for k, v in template.variables().items():
+                    if not 'Password' in v:
+                        continue
+                    if 'services.'+k in stack.current_state.yml_view:
+                        pw = stack.current_state.yml_view.get("services."+k)
+                        print(f'- {k}: {pw}')
+                    else:
+                        print(f'- {k} is not set')
     else:
         logger.error('No operating mode selected')
         ap.print_usage()
