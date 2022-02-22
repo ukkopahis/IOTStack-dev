@@ -214,7 +214,7 @@ class TemplateFile:
                 for service in self.bare_yml.values()
                 for port in service.get('ports', []) }
 
-    def variable_items(self) -> dict[str, str]:
+    def variables(self) -> dict[str, str]:
         """Return paths to dynamic variables defined in the template. These are
         the variable keys to use in a with_variables() call to replace them.
 
@@ -236,7 +236,7 @@ class TemplateFile:
         for path, val in variables.items():
             if path in result.yml_view:
                 result.yml_view.set(path, val)
-        unreplaced = result.variable_items()
+        unreplaced = result.variables()
         if unreplaced:
             raise ValueError(f'Unreplaced variables {unreplaced}')
         return result

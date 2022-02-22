@@ -31,7 +31,7 @@ class TemplateFileTestCase(unittest.TestCase):
 
     def test_variable_items(self):
         self.assertEqual(
-            self.t.variable_items(),
+            self.t.variables(),
             {'mockservice.environment.PW': '%randomPassword%'})
 
     def test_with_variables(self):
