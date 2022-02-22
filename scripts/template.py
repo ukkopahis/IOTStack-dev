@@ -319,15 +319,43 @@ class Stack:
         templates = self.templates.service_templates.keys()
         return services & templates
 
+def check_op(args):
+    """Check all templates for problems"""
+    if args.templates:
+        print('ERROR: must not specify any containers for checking',
+              file=sys.stderr)
+        sys.exit(99)
+    templates = Templates(Path(consts.templatesDirectory))
+    conflicts = templates.conflicting_ports(verbose=True)
+    sys.exit(int(len(conflicts) > 0))
+
+def list_op(args):
+    """List ALL or current services"""
+    stack = Stack(Path('docker-compose.yml'), Path('.templates'))
+    if 'ALL' in args.templates:
+        for template in stack.templates.service_templates.keys():
+            print(template)
+    else:
+        logger.info('Current services')
+        for service_name in sorted(stack.selected_templates()):
+            print(service_name)
+            template = stack.templates.service_templates[service_name]
+            for k, v in template.variables().items():
+                if not 'Password' in v:
+                    continue
+                if 'services.'+k in stack.current_state.yml_view:
+                    pw = stack.current_state.yml_view.get("services."+k)
+                    print(f'- {k}: {pw}')
+                else:
+                    print(f'- {k} is not set')
+
 def init_logger(verbosity: int):
-    level = logging.ERROR
+    """Set-up logging. verbosity: 0=ERROR 1=WARN 2=INFO 3=DEBUG"""
     msg_format = '%(levelname)s: %(message)s'
-    if verbosity >= 1:
-        level = logging.INFO
     if verbosity >= 2:
-        level = logging.DEBUG
         msg_format = ('[%(filename)s:%(lineno)s/%(funcName)17s]'
                             '%(levelname)s: %(message)s')
+    level = 40 - verbosity*10
     logging.basicConfig(format=msg_format, level=level, stream=sys.stderr)
 
 def main():
@@ -349,7 +377,8 @@ def main():
     ap.add_argument('--prog', help=argparse.SUPPRESS)
     ap_operations = ap.add_argument_group('Operation, use exactly one')
     op = ap_operations.add_mutually_exclusive_group(required=True)
-    op.add_argument('-L', '--list', action='store_true',
+    op.add_argument('-L', '--list',
+                    action='store_const', const=list_op, dest='op',
                     help='''Print out current containers in the stack and their
                     passwords. Use the special value "ALL" to list all
                     available containers.''')
@@ -370,7 +399,8 @@ def main():
                     manual modification.''')
     op.add_argument('-D', '--delete', action='store_true',
                     help='Remove listed containers from the stack.')
-    op.add_argument('-C', '--check', action='store_true',
+    op.add_argument('-C', '--check',
+                    action='store_const', const=check_op, dest='op',
                     help='''Check all templates for port conflicts and exit.
                     Use during container template development.''')
     ap.add_argument('templates', action='store', nargs='*',
@@ -378,7 +408,7 @@ def main():
                     help='''Containers to add, update or remove, depending on
                     the selected operation. Use the special value "CURRENT" to
                     apply operation for all added containers.''')
-    ap.add_argument('-v', '--verbose', action='count', default=0,
+    ap.add_argument('-v', '--verbose', action='count', default=1,
                     help='''Print extra information to stderr. Use twice for
                     debug information.''')
     ap.add_argument('-n', '--no-backup', dest='backup', action='store_false',
@@ -400,31 +430,8 @@ def main():
     args = ap.parse_args()
     init_logger(args.verbose)
     logger.debug("Program arguments: %s", args)
-    if args.check:
-        if args.templates:
-            print('ERROR: must not specify any containers for checking',
-                  file=sys.stderr)
-            sys.exit(99)
-        templates = Templates(Path(consts.templatesDirectory))
-        conflicts = templates.conflicting_ports(verbose=True)
-        sys.exit(int(len(conflicts) > 0))
-    elif args.list:
-        stack = Stack(Path('docker-compose.yml'), Path('.templates'))
-        if 'ALL' in args.templates:
-            for template in stack.templates.service_templates.keys():
-                print(template)
-        else:
-            for service_name in sorted(stack.selected_templates()):
-                print(service_name)
-                template = stack.templates.service_templates[service_name]
-                for k, v in template.variables().items():
-                    if not 'Password' in v:
-                        continue
-                    if 'services.'+k in stack.current_state.yml_view:
-                        pw = stack.current_state.yml_view.get("services."+k)
-                        print(f'- {k}: {pw}')
-                    else:
-                        print(f'- {k} is not set')
+    if args.op:
+        args.op(args)
     else:
         logger.error('No operating mode selected')
         ap.print_usage()
