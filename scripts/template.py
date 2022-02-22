@@ -339,29 +339,35 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''Examples:
     List all available containers:
-        %(prog)s -l
+        %(prog)s --list ALL
 
     Add pihole and wireguard services:
-        %(prog)s -p secret_password pihole wireguard
+        %(prog)s --add -p secret_password pihole wireguard
 
     To update current service definitions after a "git pull":
-        %(prog)s -r CURRENT''')
+        %(prog)s --recreate CURRENT''')
     ap.add_argument('--prog', help=argparse.SUPPRESS)
     ap_operations = ap.add_argument_group('Operation, use exactly one')
     op = ap_operations.add_mutually_exclusive_group(required=True)
     op.add_argument('-L', '--list', action='store_true',
                     help='''Print out current containers in the stack and their
-                    passwords''')
+                    passwords. Use the special value "ALL" to list all
+                    available containers.''')
+    op.add_argument('-A', '--add', action='store_true',
+                    help='''Add listed container definitions. Will not modify
+                    already existing definitions.''')
     op.add_argument('-R', '--recreate', action='store_true',
-                    help='''Add or recreate listed container definitions and
-                    add will overwrite any custom modifications you may have
-                    made, but preserves previous passwords.''')
+                    help='''Recreate listed container definitions. Will
+                    overwrite any custom modifications you may have made, but
+                    preserves previous passwords.''')
     op.add_argument('-U', '--update', action='store_true',
-                    help='''Add or update listed container definitions.
-                    Preserves previous variable assignments, generated
-                    passwords and manual customizations. In certain
-                    corner-cases this will result in an invalid configuration.
-                    Use --recreate to correct in such a case.''')
+                    help='''Update listed container definitions.
+                    Preserves variable assignments, generated passwords and
+                    manual customizations. In certain corner-cases this may
+                    result in an broken configuration, requiring a "%(prog)s
+                    --recreate CONTAINER" to fix it and then reapply your
+                    changes. This is an expert option: use only to preserve
+                    manual modification.''')
     op.add_argument('-D', '--delete', action='store_true',
                     help='Remove listed containers from the stack.')
     op.add_argument('-C', '--check', action='store_true',
@@ -369,10 +375,9 @@ def main():
                     Use during container template development.''')
     ap.add_argument('templates', action='store', nargs='*',
                     metavar='CONTAINER_NAME',
-                    help='''Container to add or update to the stack. Unlisted
-                    containers are kept unmodified. Use the special
-                    value "CURRENT" to apply operation for all added
-                    containers.''')
+                    help='''Containers to add, update or remove, depending on
+                    the selected operation. Use the special value "CURRENT" to
+                    apply operation for all added containers.''')
     ap.add_argument('-v', '--verbose', action='count', default=0,
                     help='''Print extra information to stderr. Use twice for
                     debug information.''')
