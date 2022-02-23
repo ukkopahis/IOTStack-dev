@@ -18,6 +18,7 @@ import argparse
 import copy
 import logging
 import sys
+from collections import OrderedDict
 from pathlib import Path
 from typing import List, Dict, Set, Union, Optional
 from collections.abc import Iterator
@@ -250,7 +251,7 @@ class Templates:
 
     def __init__(self, template_folder_path: Path):
         """All templates, per default loads everyting from .templates"""
-        self.service_templates = Templates.__load_templates(template_folder_path)
+        self.templates = Templates.__load_templates(template_folder_path)
         """Currently loaded TemplateFile:s"""
         self.env_template = Templates.__load_env(template_folder_path)
         """Common base TemplateFile, if available."""
@@ -280,7 +281,7 @@ class Templates:
         """Return dict with ports as keys and values as a set of service
         names."""
         service_ports = {name: template.public_ports()
-                 for name, template in self.service_templates.items()}
+                 for name, template in self.templates.items()}
         port_services = {} # type: Dict[int, Set[str]]
         for service, ports in service_ports.items():
             for port in ports:
@@ -316,11 +317,29 @@ class Stack:
         considered selected, as long as a there is a service with the same name
         as the template."""
         services = self.current_state.bare_yml['services'].keys()
-        templates = self.templates.service_templates.keys()
+        templates = self.templates.templates.keys()
         return services & templates
 
+    def add_template(self, template: TemplateFile,
+                     append_prefix="service") -> None:
+        """Add *template* to the in-memory current_state."""
+        add_parent = self.current_state.bare_yml
+        if append_prefix:
+            if append_prefix in add_parent:
+                add_parent = add_parent[append_prefix]
+            else:
+                add_parent = OrderedDict()
+                self.current_state.bare_yml[append_prefix] = add_parent
+        # actual add
+        # FIXME: password replacements
+        # save
+
+    def write_docker_compose(self, backup=True):
+        """Write in-memory changes to docker-compose.yml"""
+        # TODO
+
 def check_op(args):
-    """Check all templates for problems"""
+    """Check all templates for problems and exit."""
     if args.templates:
         print('ERROR: must not specify any containers for checking',
               file=sys.stderr)
@@ -329,25 +348,37 @@ def check_op(args):
     conflicts = templates.conflicting_ports(verbose=True)
     sys.exit(int(len(conflicts) > 0))
 
-def list_op(args):
-    """List ALL or current services"""
-    stack = Stack(Path('docker-compose.yml'), Path('.templates'))
+def show_op(stack, args):
+    """List all available templates"""
     if 'ALL' in args.templates:
-        for template in stack.templates.service_templates.keys():
+        for template in stack.templates.templates.keys():
             print(template)
-    else:
-        logger.info('Current services')
-        for service_name in sorted(stack.selected_templates()):
-            print(service_name)
-            template = stack.templates.service_templates[service_name]
-            for k, v in template.variables().items():
-                if not 'Password' in v:
-                    continue
-                if 'services.'+k in stack.current_state.yml_view:
-                    pw = stack.current_state.yml_view.get("services."+k)
-                    print(f'- {k}: {pw}')
-                else:
-                    print(f'- {k} is not set')
+
+def list_op(stack, args):
+    """List current templates and their passwords"""
+    if args.templates:
+        logger.warning('--list ignores CONTAINER_NAME arguments.')
+    for template_name in sorted(stack.selected_templates()):
+        print(template_name)
+        template = stack.templates.templates[template_name]
+        for k, v in template.variables().items():
+            if not 'Password' in v:
+                continue
+            if 'services.'+k in stack.current_state.yml_view:
+                pw = stack.current_state.yml_view.get("services."+k)
+                print(f'- {k}: {pw}')
+            else:
+                print(f'- {k} is not set')
+
+def add_op(stack, args):
+    """Add templates to the stack"""
+    for template_name in args.templates:
+        template = stack.templates.templates[template_name]
+        stack.add_template(template)
+    # After all templates are added apply variable replacement, as some vars
+    # may reference services from other templates.
+    # TODO: variable replacement
+    # TODO: write
 
 def init_logger(verbosity: int):
     """Set-up logging. verbosity: 0=ERROR 1=WARN 2=INFO 3=DEBUG"""
@@ -359,6 +390,7 @@ def init_logger(verbosity: int):
     logging.basicConfig(format=msg_format, level=level, stream=sys.stderr)
 
 def main():
+    """CLI entrypoint."""
     prog_name=None
     if len(sys.argv) >= 3 and sys.argv[1] == '--prog':
         prog_name = sys.argv[2]
@@ -367,7 +399,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''Examples:
     List all available containers:
-        %(prog)s --list ALL
+        %(prog)s --show
 
     Add pihole and wireguard services:
         %(prog)s --add -p secret_password pihole wireguard
@@ -375,39 +407,11 @@ def main():
     To update current service definitions after a "git pull":
         %(prog)s --recreate CURRENT''')
     ap.add_argument('--prog', help=argparse.SUPPRESS)
-    ap_operations = ap.add_argument_group('Operation, use exactly one')
-    op = ap_operations.add_mutually_exclusive_group(required=True)
-    op.add_argument('-L', '--list',
-                    action='store_const', const=list_op, dest='op',
-                    help='''Print out current containers in the stack and their
-                    passwords. Use the special value "ALL" to list all
-                    available containers.''')
-    op.add_argument('-A', '--add', action='store_true',
-                    help='''Add listed container definitions. Will not modify
-                    already existing definitions.''')
-    op.add_argument('-R', '--recreate', action='store_true',
-                    help='''Recreate listed container definitions. Will
-                    overwrite any custom modifications you may have made, but
-                    preserves previous passwords.''')
-    op.add_argument('-U', '--update', action='store_true',
-                    help='''Update listed container definitions.
-                    Preserves variable assignments, generated passwords and
-                    manual customizations. In certain corner-cases this may
-                    result in an broken configuration, requiring a "%(prog)s
-                    --recreate CONTAINER" to fix it and then reapply your
-                    changes. This is an expert option: use only to preserve
-                    manual modification.''')
-    op.add_argument('-D', '--delete', action='store_true',
-                    help='Remove listed containers from the stack.')
-    op.add_argument('-C', '--check',
-                    action='store_const', const=check_op, dest='op',
-                    help='''Check all templates for port conflicts and exit.
-                    Use during container template development.''')
     ap.add_argument('templates', action='store', nargs='*',
                     metavar='CONTAINER_NAME',
-                    help='''Containers to add, update or remove, depending on
-                    the selected operation. Use the special value "CURRENT" to
-                    apply operation for all added containers.''')
+                    help='''Containers to list, add, change or remove,
+                    depending on the selected operation. Use the special value
+                    "CURRENT" to apply operation for all added containers.''')
     ap.add_argument('-v', '--verbose', action='count', default=1,
                     help='''Print extra information to stderr. Use twice for
                     debug information.''')
@@ -427,11 +431,43 @@ def main():
                     use the --recreate flag. Note: some containers will store
                     passwords into their own databases, to change such
                     passwords see the container's documentation.''')
+    ap_operations = ap.add_argument_group('Operation, use exactly one')
+    op = ap_operations.add_mutually_exclusive_group(required=True)
+    op.add_argument('-S', '--show',
+                    action='store_const', const=show_op, dest='op',
+                    help='''List all available containers.''')
+    op.add_argument('-L', '--list',
+                    action='store_const', const=list_op, dest='op',
+                    help='''Print out current containers in the stack and their
+                    passwords.''')
+    op.add_argument('-A', '--add',
+                    action='store_const', const=add_op, dest='op',
+                    help='''Add listed container definitions. Will not modify
+                    already existing definitions.''')
+    op.add_argument('-R', '--recreate', action='store_true',
+                    help='''Recreate listed container definitions. Will
+                    overwrite any custom modifications you may have made, but
+                    preserves previous passwords.''')
+    op.add_argument('-U', '--update', action='store_true',
+                    help='''Update listed container definitions.
+                    Preserves variable assignments, generated passwords and
+                    manual customizations. In certain corner-cases this may
+                    result in an broken configuration, requiring a "%(prog)s
+                    --recreate CONTAINER" to fix such containers and then
+                    reapply your changes. This is an expert option: use only
+                    when you need to preserve manual modification.''')
+    op.add_argument('-D', '--delete', action='store_true',
+                    help='Remove listed containers from the stack.')
+    op.add_argument('-C', '--check',
+                    action='store_const', const=check_op, dest='op',
+                    help='''Check all templates for port conflicts and exit.
+                    Use during container template development.''')
     args = ap.parse_args()
     init_logger(args.verbose)
     logger.debug("Program arguments: %s", args)
     if args.op:
-        args.op(args)
+        stack = Stack(Path('docker-compose.yml'), Path('.templates'))
+        args.op(stack, args)
     else:
         logger.error('No operating mode selected')
         ap.print_usage()
