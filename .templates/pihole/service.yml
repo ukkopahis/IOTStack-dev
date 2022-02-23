@@ -10,6 +10,8 @@ pihole:
     - TZ=Etc/UTC
     - WEBPASSWORD=%randomAdminPassword%
     - INTERFACE=eth0
+    - QUERY_LOGGING=false    # reduce flash wear
+    - FTLCONF_DBINTERVAL=5.0 # reduce flash wear: write every 5mins
   volumes:
     - ./volumes/pihole/etc-pihole:/etc/pihole
     - ./volumes/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
