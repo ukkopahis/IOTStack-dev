@@ -424,7 +424,8 @@ def main():
                     help='''Add variable assignment to set when adding or
                     updating containers e.g. "pihole.ports.80/tcp=1080". When
                     updating, variables default to already previous values read
-                    from your current stack file (docker-compose.yml).''')
+                    from your current stack file (docker-compose.yml). Use
+                    "--list --assign help" to list current keys and values''')
     ap.add_argument('-p', '--default-password', dest='password',
                     help='''Use PASSWORD for all containers instead of creating
                     new random passwords. To update already existing containers
