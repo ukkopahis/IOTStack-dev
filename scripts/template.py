@@ -19,9 +19,9 @@ import copy
 import logging
 import sys
 from collections import OrderedDict
+from collections.abc import Iterator
 from pathlib import Path
 from typing import List, Dict, Set, Union, Optional
-from collections.abc import Iterator
 from ruamel.yaml import YAML
 from deps import consts
 
